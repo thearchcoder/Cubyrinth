@@ -93,7 +93,7 @@ public class MazeGenerator : MonoBehaviour {
 		{
 			for (int j = 0; j <= Maze.GetUpperBound(1); j++)
 			{
-				Vector3 local_pos = new Vector3(offset_x + i * cell_size, offset_y + j * cell_size, 0.55f);
+				Vector3 local_pos = new Vector3(offset_x + i * cell_size, offset_y + j * cell_size, 0.45f);
 				Vector3 rotated_pos = rotation * local_pos;
 				if (Maze[i, j] == 1)
 				{
