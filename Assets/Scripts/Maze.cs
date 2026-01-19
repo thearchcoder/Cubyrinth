@@ -2,9 +2,19 @@ using UnityEngine;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+
+public enum MazeAxis {
+	XPositive,
+	XNegative,
+	YPositive,
+	YNegative,
+	ZPositive,
+	ZNegative
+}
+
 public class MazeGenerator : MonoBehaviour {
 	public int width, height;
-	public Quaternion rotation;
+	public MazeAxis axis = MazeAxis.ZPositive;
 	public Material brick;
 	private int[,] Maze;
 	private List<Vector3> pathMazes = new List<Vector3>();
@@ -48,6 +58,19 @@ public class MazeGenerator : MonoBehaviour {
 		Camera.main.orthographicSize = 0.6f;
 		GenerateMaze();
 	}
+	Quaternion GetRotationFromAxis()
+	{
+		switch (axis)
+		{
+			case MazeAxis.XPositive: return Quaternion.Euler(0, 90, 0);
+			case MazeAxis.XNegative: return Quaternion.Euler(0, -90, 0);
+			case MazeAxis.YPositive: return Quaternion.Euler(-90, 0, 0);
+			case MazeAxis.YNegative: return Quaternion.Euler(90, 0, 0);
+			case MazeAxis.ZPositive: return Quaternion.identity;
+			case MazeAxis.ZNegative: return Quaternion.Euler(0, 180, 0);
+			default: return Quaternion.identity;
+		}
+	}
 	void GenerateMaze()
 	{
 		Maze = new int[width, height];
@@ -64,6 +87,7 @@ public class MazeGenerator : MonoBehaviour {
 		float cell_size = 1.0f / Mathf.Max(width, height);
 		float offset_x = -0.45f;
 		float offset_y = -0.45f;
+		Quaternion rotation = GetRotationFromAxis();
 		GameObject ptype = null;
 		for (int i = 0; i <= Maze.GetUpperBound(0); i++)
 		{
