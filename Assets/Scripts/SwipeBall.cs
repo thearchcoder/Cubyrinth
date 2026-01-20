@@ -13,7 +13,11 @@ public class SwipeBall : MonoBehaviour
 {
 	[SerializeField] private BallAxis m_Face = BallAxis.ZPositive;
 	[SerializeField] private float m_GravityMultiplier = 9.81f;
+	[SerializeField] private float m_FrictionCoefficient = 0.5f;
+	[SerializeField] private bool m_UseKeyboardForTesting = true;
+	[SerializeField] private float m_KeyboardTiltSpeed = 2f;
 	private Rigidbody m_Rigidbody;
+	private Vector3 m_SimulatedAccel = Vector3.zero;
 	void Start()
 	{
 		m_Rigidbody = GetComponent<Rigidbody>();
@@ -22,6 +26,7 @@ public class SwipeBall : MonoBehaviour
 			m_Rigidbody = gameObject.AddComponent<Rigidbody>();
 		}
 		m_Rigidbody.useGravity = false;
+		m_Rigidbody.isKinematic = false;
 
 		GameObject maze_walls = GameObject.FindGameObjectWithTag("MazeOutsideWalls");
 		if (maze_walls != null)
@@ -38,15 +43,42 @@ public class SwipeBall : MonoBehaviour
 			InputSystem.EnableDevice(Accelerometer.current);
 		}
 	}
+	void Update()
+	{
+		if (m_UseKeyboardForTesting && Keyboard.current != null)
+		{
+			Vector2 input = Vector2.zero;
+			if (Keyboard.current.wKey.isPressed) input.y = 1f;
+			if (Keyboard.current.sKey.isPressed) input.y = -1f;
+			if (Keyboard.current.aKey.isPressed) input.x = -1f;
+			if (Keyboard.current.dKey.isPressed) input.x = 1f;
+
+			m_SimulatedAccel = Vector3.Lerp(m_SimulatedAccel, new Vector3(input.x, input.y, 0f), Time.deltaTime * m_KeyboardTiltSpeed);
+		}
+	}
 	void FixedUpdate()
 	{
-		if (Accelerometer.current != null)
+		Vector3 accel;
+		if (m_UseKeyboardForTesting)
 		{
-			Vector3 accel = Accelerometer.current.acceleration.ReadValue();
-			Vector3 gravity = GetGravityDirection(accel) * m_GravityMultiplier;
-			m_Rigidbody.AddForce(gravity, ForceMode.Acceleration);
-			ConstrainVelocity();
+			accel = m_SimulatedAccel;
 		}
+		else if (Accelerometer.current != null)
+		{
+			accel = Accelerometer.current.acceleration.ReadValue();
+		}
+		else
+		{
+			return;
+		}
+
+		Vector3 gravity = GetGravityDirection(accel) * m_GravityMultiplier;
+		m_Rigidbody.AddForce(gravity, ForceMode.Acceleration);
+
+		Vector3 friction = -m_Rigidbody.linearVelocity * m_FrictionCoefficient;
+		m_Rigidbody.AddForce(friction, ForceMode.Acceleration);
+
+		ConstrainVelocity();
 	}
 	Vector3 GetGravityDirection(Vector3 accel)
 	{
@@ -70,6 +102,8 @@ public class SwipeBall : MonoBehaviour
 	}
 	void ConstrainVelocity()
 	{
+		if (m_Rigidbody.isKinematic) return;
+
 		Vector3 velocity = m_Rigidbody.linearVelocity;
 		switch (m_Face)
 		{
