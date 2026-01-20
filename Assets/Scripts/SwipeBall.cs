@@ -48,8 +48,8 @@ public class SwipeBall : MonoBehaviour
 		if (m_UseKeyboardForTesting && Keyboard.current != null)
 		{
 			Vector2 input = Vector2.zero;
-			if (Keyboard.current.wKey.isPressed) input.y = 1f;
-			if (Keyboard.current.sKey.isPressed) input.y = -1f;
+			if (Keyboard.current.wKey.isPressed) input.y = -1f;
+			if (Keyboard.current.sKey.isPressed) input.y = 1f;
 			if (Keyboard.current.aKey.isPressed) input.x = -1f;
 			if (Keyboard.current.dKey.isPressed) input.x = 1f;
 

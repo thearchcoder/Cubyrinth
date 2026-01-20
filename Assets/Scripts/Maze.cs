@@ -16,30 +16,14 @@ public class MazeGenerator : MonoBehaviour {
 	public int width, height;
 	public MazeAxis axis = MazeAxis.ZPositive;
 	public Material brick;
+	public int levelId = 0;
+	public Material winningAreaMaterial;
 	private int[,] Maze;
 	private List<Vector3> pathMazes = new List<Vector3>();
 	private Stack<Vector2> _tiletoTry = new Stack<Vector2>();
-	private List<Vector2> offsets = new List<Vector2> { new Vector2(0, 1), new Vector2(0, -1), new Vector2(1, 0), new Vector2(-1, 0) };
-	private System.Random rnd = new System.Random();
-	private int _width, _height;
-	private Vector2 _currentTile;
-	public Vector2 CurrentTile
-	{
-		get { return _currentTile; }
-		private set
-		{
-			if (value.x < 1 || value.x >= this.width - 1 || value.y < 1 || value.y >= this.height - 1)
-			{
-				throw new ArgumentException("CurrentTile must be within the one tile border all around the maze");
-			}
-			if (value.x % 2 == 1 || value.y % 2 == 1)
-			{ _currentTile = value; }
-			else
-			{
-				throw new ArgumentException("The current square must not be both on an even X-axis and an even Y-axis, to ensure we can get walls around all tunnels");
-			}
-		}
-	}
+	private List<Vector2> offsets = new List<Vector2> { new Vector2(0, 2), new Vector2(0, -2), new Vector2(2, 0), new Vector2(-2, 0) };
+	private System.Random rnd;
+	private Vector3 winningPosition;
 	private static MazeGenerator instance;
 	public static MazeGenerator Instance
 	{
@@ -54,9 +38,10 @@ public class MazeGenerator : MonoBehaviour {
 	}
 	void Start()
 	{
-		Camera.main.orthographic = true;
-		Camera.main.orthographicSize = 0.6f;
+		rnd = new System.Random(levelId);
 		GenerateMaze();
+		CreateWinningArea();
+		PositionBalls();
 	}
 	Quaternion GetRotationFromAxis()
 	{
@@ -81,9 +66,7 @@ public class MazeGenerator : MonoBehaviour {
 				Maze[x, y] = 1;
 			}
 		}
-		CurrentTile = Vector2.one;
-		_tiletoTry.Push(CurrentTile);
-		Maze = CreateMaze();
+		CreateMaze();
 		float cell_size = 1.0f / Mathf.Max(width, height);
 		float offset_x = -0.45f;
 		float offset_y = -0.45f;
@@ -98,7 +81,7 @@ public class MazeGenerator : MonoBehaviour {
 				if (Maze[i, j] == 1)
 				{
 					ptype = GameObject.CreatePrimitive(PrimitiveType.Cube);
-					ptype.transform.localScale = new Vector3(cell_size, cell_size, cell_size);
+					ptype.transform.localScale = new Vector3(cell_size, cell_size, cell_size * 3.0f);
 					ptype.transform.rotation = rotation;
 					ptype.transform.position = rotated_pos;
 					if (brick != null)
@@ -114,24 +97,28 @@ public class MazeGenerator : MonoBehaviour {
 			}
 		}
 	}
-	public int[,] CreateMaze()
+	void CreateMaze()
 	{
-		List<Vector2> neighbors;
+		Vector2 start = Vector2.one;
+		_tiletoTry.Push(start);
+		Maze[(int)start.x, (int)start.y] = 0;
 		while (_tiletoTry.Count > 0)
 		{
-			Maze[(int)CurrentTile.x, (int)CurrentTile.y] = 0;
-			neighbors = GetValidNeighbors(CurrentTile);
+			Vector2 current = _tiletoTry.Peek();
+			List<Vector2> neighbors = GetValidNeighbors(current);
 			if (neighbors.Count > 0)
 			{
-				_tiletoTry.Push(CurrentTile);
-				CurrentTile = neighbors[rnd.Next(neighbors.Count)];
+				Vector2 chosen = neighbors[0];
+				Vector2 wall = new Vector2((current.x + chosen.x) / 2, (current.y + chosen.y) / 2);
+				Maze[(int)wall.x, (int)wall.y] = 0;
+				Maze[(int)chosen.x, (int)chosen.y] = 0;
+				_tiletoTry.Push(chosen);
 			}
 			else
 			{
-				CurrentTile = _tiletoTry.Pop();
+				_tiletoTry.Pop();
 			}
 		}
-		return Maze;
 	}
 	private List<Vector2> GetValidNeighbors(Vector2 centerTile)
 	{
@@ -139,31 +126,166 @@ public class MazeGenerator : MonoBehaviour {
 		foreach (var offset in offsets)
 		{
 			Vector2 toCheck = new Vector2(centerTile.x + offset.x, centerTile.y + offset.y);
-			if (toCheck.x % 2 == 1 || toCheck.y % 2 == 1)
+			if (IsInside(toCheck) && Maze[(int)toCheck.x, (int)toCheck.y] == 1)
 			{
-				if (Maze[(int)toCheck.x, (int)toCheck.y] == 1 && HasThreeWallsIntact(toCheck))
-				{
-					validNeighbors.Add(toCheck);
-				}
+				validNeighbors.Add(toCheck);
 			}
 		}
+		Shuffle(validNeighbors);
 		return validNeighbors;
 	}
-	private bool HasThreeWallsIntact(Vector2 Vector2ToCheck)
+	private void Shuffle(List<Vector2> list)
 	{
-		int intactWallCounter = 0;
-		foreach (var offset in offsets)
+		for (int i = list.Count - 1; i > 0; i--)
 		{
-			Vector2 neighborToCheck = new Vector2(Vector2ToCheck.x + offset.x, Vector2ToCheck.y + offset.y);
-			if (IsInside(neighborToCheck) && Maze[(int)neighborToCheck.x, (int)neighborToCheck.y] == 1)
-			{
-				intactWallCounter++;
-			}
+			int j = rnd.Next(i + 1);
+			Vector2 temp = list[i];
+			list[i] = list[j];
+			list[j] = temp;
 		}
-		return intactWallCounter == 3;
 	}
 	private bool IsInside(Vector2 p)
 	{
 		return p.x >= 0 && p.y >= 0 && p.x < width && p.y < height;
+	}
+
+	void CreateWinningArea()
+	{
+		if (pathMazes.Count == 0) return;
+
+		float cell_size = 1.0f / Mathf.Max(width, height);
+		float offset_x = -0.45f;
+		float offset_y = -0.45f;
+		Quaternion rotation = GetRotationFromAxis();
+
+		Vector3[] targetPositions = new Vector3[5];
+		targetPositions[0] = rotation * new Vector3(0f, 0f, 0.45f);
+		targetPositions[1] = rotation * new Vector3(offset_x, offset_y + (height - 1) * cell_size, 0.45f);
+		targetPositions[2] = rotation * new Vector3(offset_x, offset_y, 0.45f);
+		targetPositions[3] = rotation * new Vector3(offset_x + (width - 1) * cell_size, offset_y + (height - 1) * cell_size, 0.45f);
+		targetPositions[4] = rotation * new Vector3(offset_x + (width - 1) * cell_size, offset_y, 0.45f);
+
+		int chosenIndex = rnd.Next(5);
+		Vector3 targetPos = targetPositions[chosenIndex];
+
+		float minDist = float.MaxValue;
+		winningPosition = pathMazes[0];
+		foreach (Vector3 pathPos in pathMazes)
+		{
+			float dist = Vector3.Distance(pathPos, targetPos);
+			if (dist < minDist)
+			{
+				minDist = dist;
+				winningPosition = pathPos;
+			}
+		}
+
+		GameObject winArea = GameObject.CreatePrimitive(PrimitiveType.Cube);
+		winArea.name = "WinningArea";
+		winArea.tag = "WinningArea";
+		winArea.transform.localScale = new Vector3(cell_size, cell_size, cell_size);
+		winArea.transform.position = winningPosition;
+		winArea.transform.rotation = rotation;
+
+		BoxCollider collider = winArea.GetComponent<BoxCollider>();
+		if (collider != null)
+		{
+			collider.isTrigger = true;
+		}
+
+		if (winningAreaMaterial != null)
+		{
+			winArea.GetComponent<Renderer>().material = winningAreaMaterial;
+		}
+		else
+		{
+			winArea.GetComponent<Renderer>().material.color = Color.green;
+		}
+
+		winArea.AddComponent<WinningArea>();
+		winArea.transform.parent = transform;
+	}
+
+	Dictionary<Vector3, int> CalculatePathDistances()
+	{
+		Dictionary<Vector3, int> distances = new Dictionary<Vector3, int>();
+		Queue<Vector3> queue = new Queue<Vector3>();
+
+		queue.Enqueue(winningPosition);
+		distances[winningPosition] = 0;
+
+		float cell_size = 1.0f / Mathf.Max(width, height);
+		float maxNeighborDist = cell_size * 1.5f;
+
+		while (queue.Count > 0)
+		{
+			Vector3 current = queue.Dequeue();
+			int currentDist = distances[current];
+
+			foreach (Vector3 pathPos in pathMazes)
+			{
+				if (!distances.ContainsKey(pathPos))
+				{
+					float dist = Vector3.Distance(current, pathPos);
+					if (dist <= maxNeighborDist)
+					{
+						distances[pathPos] = currentDist + 1;
+						queue.Enqueue(pathPos);
+					}
+				}
+			}
+		}
+
+		return distances;
+	}
+
+	void PositionBalls()
+	{
+		GameObject[] balls = GameObject.FindGameObjectsWithTag("Ball");
+		if (balls.Length == 0 || pathMazes.Count < 2) return;
+
+		Dictionary<Vector3, int> pathDistances = CalculatePathDistances();
+
+		List<Vector3> sortedPositions = new List<Vector3>(pathMazes);
+		sortedPositions.Sort((a, b) => {
+			int distA = pathDistances.ContainsKey(a) ? pathDistances[a] : 0;
+			int distB = pathDistances.ContainsKey(b) ? pathDistances[b] : 0;
+			return distB.CompareTo(distA);
+		});
+
+		List<Vector3> usedPositions = new List<Vector3>();
+		float minBallDistance = 0.1f;
+
+		for (int i = 0; i < balls.Length; i++)
+		{
+			Vector3 chosenPos = Vector3.zero;
+			bool foundPosition = false;
+
+			foreach (Vector3 candidatePos in sortedPositions)
+			{
+				bool tooClose = false;
+				foreach (Vector3 usedPos in usedPositions)
+				{
+					if (Vector3.Distance(candidatePos, usedPos) < minBallDistance)
+					{
+						tooClose = true;
+						break;
+					}
+				}
+
+				if (!tooClose)
+				{
+					chosenPos = candidatePos;
+					foundPosition = true;
+					break;
+				}
+			}
+
+			if (foundPosition)
+			{
+				balls[i].transform.position = chosenPos;
+				usedPositions.Add(chosenPos);
+			}
+		}
 	}
 }
