@@ -5,11 +5,13 @@ TagManager:
   serializedVersion: 3
   tags:
   - MazeOutsideWalls
+  - Ball
+  - WinningArea
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - 
+  - PostProcess
   - Water
   - UI
   - 
