@@ -18,6 +18,9 @@ public class SwipeBall : MonoBehaviour
 	[SerializeField] private float m_KeyboardTiltSpeed = 2f;
 	private Rigidbody m_Rigidbody;
 	private Vector3 m_SimulatedAccel = Vector3.zero;
+	private bool m_IsEnteringHole = false;
+	private Vector3 m_TargetHolePosition;
+	private float m_HolePullStrength = 5f;
 	void Start()
 	{
 		m_Rigidbody = GetComponent<Rigidbody>();
@@ -58,6 +61,34 @@ public class SwipeBall : MonoBehaviour
 	}
 	void FixedUpdate()
 	{
+		if (m_IsEnteringHole)
+		{
+			// Ball is entering hole - move towards hole center
+			Vector3 directionToHole = m_TargetHolePosition - transform.position;
+			float distanceToHole = directionToHole.magnitude;
+
+			// Apply force towards the hole
+			if (distanceToHole > 0.001f)
+			{
+				Vector3 pullForce = directionToHole.normalized * m_HolePullStrength;
+				m_Rigidbody.AddForce(pullForce, ForceMode.Acceleration);
+			}
+
+			// Apply friction to slow down
+			Vector3 friction = -m_Rigidbody.linearVelocity * m_FrictionCoefficient;
+			m_Rigidbody.AddForce(friction, ForceMode.Acceleration);
+
+			ConstrainVelocity();
+
+			// When ball is very close and slow, destroy it
+			if (distanceToHole < 0.01f && m_Rigidbody.linearVelocity.magnitude < 0.1f)
+			{
+				Destroy(gameObject);
+			}
+
+			return;
+		}
+
 		Vector3 accel;
 		if (m_UseKeyboardForTesting)
 		{
@@ -121,5 +152,11 @@ public class SwipeBall : MonoBehaviour
 				break;
 		}
 		m_Rigidbody.linearVelocity = velocity;
+	}
+
+	public void StartEnteringHole(Vector3 holePosition)
+	{
+		m_IsEnteringHole = true;
+		m_TargetHolePosition = holePosition;
 	}
 }

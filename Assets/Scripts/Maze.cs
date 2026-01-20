@@ -17,7 +17,13 @@ public class MazeGenerator : MonoBehaviour {
 	public MazeAxis axis = MazeAxis.ZPositive;
 	public Material brick;
 	public int levelId = 0;
-	public Material winningAreaMaterial;
+	public int totalBallsCount = 2;
+	public Vector3 holesSpawnOffset = Vector3.zero;
+	public Vector3 ballsSpawnOffset = Vector3.zero;
+	private Color[] ballColors = new Color[] {
+		new Color(1.0f, 0.4f, 0.4f),
+		new Color(0.4f, 0.6f, 1.0f)
+	};
 	private int[,] Maze;
 	private List<Vector3> pathMazes = new List<Vector3>();
 	private Stack<Vector2> _tiletoTry = new Stack<Vector2>();
@@ -40,8 +46,8 @@ public class MazeGenerator : MonoBehaviour {
 	{
 		rnd = new System.Random(levelId);
 		GenerateMaze();
-		CreateWinningArea();
 		PositionBalls();
+		CreateWinningAreas();
 	}
 	Quaternion GetRotationFromAxis()
 	{
@@ -149,7 +155,7 @@ public class MazeGenerator : MonoBehaviour {
 		return p.x >= 0 && p.y >= 0 && p.x < width && p.y < height;
 	}
 
-	void CreateWinningArea()
+	void CreateWinningAreas()
 	{
 		if (pathMazes.Count == 0) return;
 
@@ -165,45 +171,111 @@ public class MazeGenerator : MonoBehaviour {
 		targetPositions[3] = rotation * new Vector3(offset_x + (width - 1) * cell_size, offset_y + (height - 1) * cell_size, 0.45f);
 		targetPositions[4] = rotation * new Vector3(offset_x + (width - 1) * cell_size, offset_y, 0.45f);
 
-		int chosenIndex = rnd.Next(5);
-		Vector3 targetPos = targetPositions[chosenIndex];
+		// Create 2 winning areas for 2 balls
+		List<Vector3> usedWinningPositions = new List<Vector3>();
+		float minWinningAreaDistance = 0.15f;
 
-		float minDist = float.MaxValue;
-		winningPosition = pathMazes[0];
-		foreach (Vector3 pathPos in pathMazes)
+		for (int i = 0; i < 2; i++)
 		{
-			float dist = Vector3.Distance(pathPos, targetPos);
-			if (dist < minDist)
+			int chosenIndex = rnd.Next(5);
+			Vector3 targetPos = targetPositions[chosenIndex];
+
+			float minDist = float.MaxValue;
+			Vector3 winningPosition = pathMazes[0];
+
+			foreach (Vector3 pathPos in pathMazes)
 			{
-				minDist = dist;
-				winningPosition = pathPos;
+				// Check if too close to existing winning areas
+				bool tooClose = false;
+				foreach (Vector3 usedPos in usedWinningPositions)
+				{
+					if (Vector3.Distance(pathPos, usedPos) < minWinningAreaDistance)
+					{
+						tooClose = true;
+						break;
+					}
+				}
+
+				if (!tooClose)
+				{
+					float dist = Vector3.Distance(pathPos, targetPos);
+					if (dist < minDist)
+					{
+						minDist = dist;
+						winningPosition = pathPos;
+					}
+				}
 			}
-		}
 
-		GameObject winArea = GameObject.CreatePrimitive(PrimitiveType.Cube);
-		winArea.name = "WinningArea";
-		winArea.tag = "WinningArea";
-		winArea.transform.localScale = new Vector3(cell_size, cell_size, cell_size);
-		winArea.transform.position = winningPosition;
-		winArea.transform.rotation = rotation;
+			usedWinningPositions.Add(winningPosition);
 
-		BoxCollider collider = winArea.GetComponent<BoxCollider>();
-		if (collider != null)
-		{
-			collider.isTrigger = true;
-		}
+			if (i == 0)
+			{
+				this.winningPosition = winningPosition;
+			}
 
-		if (winningAreaMaterial != null)
-		{
-			winArea.GetComponent<Renderer>().material = winningAreaMaterial;
-		}
-		else
-		{
-			winArea.GetComponent<Renderer>().material.color = Color.green;
-		}
+			GameObject winArea = new GameObject("WinningArea_" + i);
+			winArea.tag = "WinningArea";
+			winArea.transform.position = winningPosition + holesSpawnOffset;
+			winArea.transform.rotation = rotation;
+			winArea.transform.parent = transform;
 
-		winArea.AddComponent<WinningArea>();
-		winArea.transform.parent = transform;
+			float scaledSize = cell_size * 0.55f;
+			Color areaColor = ballColors[i];
+			Color grayedColor = areaColor * 0.7f;
+
+			GameObject innerSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+			innerSphere.name = "InnerSphere";
+			innerSphere.transform.parent = winArea.transform;
+			innerSphere.transform.localPosition = Vector3.zero;
+			innerSphere.transform.localScale = new Vector3(scaledSize, scaledSize, scaledSize);
+
+			Material innerMaterial = new Material(Shader.Find("Unlit/Color"));
+			innerMaterial.color = grayedColor * 0.6f;
+			innerSphere.GetComponent<Renderer>().material = innerMaterial;
+
+			Destroy(innerSphere.GetComponent<SphereCollider>());
+
+			GameObject outerRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+			outerRing.name = "OuterRing";
+			outerRing.transform.parent = winArea.transform;
+			outerRing.transform.localPosition = Vector3.zero;
+
+			Vector3 cylinderRotation = Vector3.zero;
+			switch (axis)
+			{
+				case MazeAxis.XPositive:
+				case MazeAxis.XNegative:
+					cylinderRotation = new Vector3(0, 0, 90);
+					break;
+				case MazeAxis.YPositive:
+				case MazeAxis.YNegative:
+					cylinderRotation = new Vector3(0, 0, 0);
+					break;
+				case MazeAxis.ZPositive:
+				case MazeAxis.ZNegative:
+					cylinderRotation = new Vector3(90, 0, 0);
+					break;
+			}
+			outerRing.transform.localEulerAngles = cylinderRotation;
+
+			float ringDiameter = scaledSize * 1.2f;
+			float ringThickness = scaledSize * 0.18f;
+			outerRing.transform.localScale = new Vector3(ringDiameter, ringThickness, ringDiameter);
+
+			Material outerMaterial = new Material(Shader.Find("Unlit/Color"));
+			outerMaterial.color = grayedColor;
+			outerRing.GetComponent<Renderer>().material = outerMaterial;
+
+			Destroy(outerRing.GetComponent<CapsuleCollider>());
+			SphereCollider triggerCollider = winArea.AddComponent<SphereCollider>();
+			triggerCollider.radius = scaledSize * 0.6f;
+			triggerCollider.isTrigger = true;
+
+			// Add WinningArea component and set its color
+			WinningArea winAreaComponent = winArea.AddComponent<WinningArea>();
+			winAreaComponent.requiredColor = areaColor;
+		}
 	}
 
 	Dictionary<Vector3, int> CalculatePathDistances()
@@ -241,8 +313,25 @@ public class MazeGenerator : MonoBehaviour {
 
 	void PositionBalls()
 	{
-		GameObject[] balls = GameObject.FindGameObjectsWithTag("Ball");
-		if (balls.Length == 0 || pathMazes.Count < 2) return;
+		GameObject[] existingBalls = GameObject.FindGameObjectsWithTag("Ball");
+		if (existingBalls.Length == 0 || pathMazes.Count < 2) return;
+
+		GameObject ball1 = existingBalls[0];
+
+		for (int i = existingBalls.Length - 1; i >= 1; i--)
+		{
+			Destroy(existingBalls[i]);
+		}
+
+		List<GameObject> balls = new List<GameObject>();
+		balls.Add(ball1);
+
+		for (int i = 1; i < totalBallsCount; i++)
+		{
+			GameObject newBall = Instantiate(ball1);
+			newBall.name = "Ball" + (i + 1);
+			balls.Add(newBall);
+		}
 
 		Dictionary<Vector3, int> pathDistances = CalculatePathDistances();
 
@@ -256,7 +345,7 @@ public class MazeGenerator : MonoBehaviour {
 		List<Vector3> usedPositions = new List<Vector3>();
 		float minBallDistance = 0.1f;
 
-		for (int i = 0; i < balls.Length; i++)
+		for (int i = 0; i < balls.Count; i++)
 		{
 			Vector3 chosenPos = Vector3.zero;
 			bool foundPosition = false;
@@ -283,8 +372,22 @@ public class MazeGenerator : MonoBehaviour {
 
 			if (foundPosition)
 			{
-				balls[i].transform.position = chosenPos;
+				balls[i].transform.position = chosenPos + ballsSpawnOffset;
 				usedPositions.Add(chosenPos);
+
+				Color ballColor = ballColors[i % ballColors.Length];
+				Renderer ballRenderer = balls[i].GetComponent<Renderer>();
+				if (ballRenderer != null)
+				{
+					ballRenderer.material.color = ballColor;
+				}
+
+				BallColor ballColorComponent = balls[i].GetComponent<BallColor>();
+				if (ballColorComponent == null)
+				{
+					ballColorComponent = balls[i].AddComponent<BallColor>();
+				}
+				ballColorComponent.color = ballColor;
 			}
 		}
 	}
