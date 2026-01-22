@@ -1,58 +1,502 @@
 using UnityEngine;
-using System;
-using System.Collections;
 using System.Collections.Generic;
 
-public enum MazeAxis {
-	XPositive,
-	XNegative,
-	YPositive,
-	YNegative,
-	ZPositive,
-	ZNegative
-}
+public enum MazeAxis { XPositive, XNegative, YPositive, YNegative, ZPositive, ZNegative }
 
 public class MazeGenerator : MonoBehaviour {
-	public int width, height;
-	public MazeAxis axis = MazeAxis.ZPositive;
+	public static MazeGenerator instance;
+	public int levelId = 1;
 	public Material brick;
-	public int levelId = 0;
-	public int totalBallsCount = 2;
-	public Vector3 holesSpawnOffset = Vector3.zero;
-	public Vector3 ballsSpawnOffset = Vector3.zero;
-	private Color[] ballColors = new Color[] {
-		new Color(1.0f, 0.4f, 0.4f),
-		new Color(0.4f, 0.6f, 1.0f)
-	};
-	private int[,] Maze;
-	private List<Vector3> pathMazes = new List<Vector3>();
-	private Stack<Vector2> _tiletoTry = new Stack<Vector2>();
-	private List<Vector2> offsets = new List<Vector2> { new Vector2(0, 2), new Vector2(0, -2), new Vector2(2, 0), new Vector2(-2, 0) };
-	private System.Random rnd;
-	private Vector3 winningPosition;
-	private static MazeGenerator instance;
-	public static MazeGenerator Instance
-	{
-		get
-		{
-			return instance;
-		}
+
+	private struct LevelConfig {
+		public int width;
+		public int height;
+		public MazeAxis axis;
+		public int ball_count;
+		public Color[] ball_colors;
 	}
-	void Awake()
-	{
+
+	private Dictionary<int, LevelConfig> m_LevelConfigs;
+	private int[,] m_Maze;
+	private List<Vector3> m_PathPositions;
+	private Vector3 m_WinningPosition;
+
+	void Awake() {
 		instance = this;
 	}
-	void Start()
-	{
-		rnd = new System.Random(levelId);
-		GenerateMaze();
-		PositionBalls();
-		CreateWinningAreas();
+
+	void LoadLevelFromFile(int level) {
+		string filePath = Application.dataPath + "/Levels/" + level + ".txt";
+
+		if (!System.IO.File.Exists(filePath)) {
+			Debug.LogError("Level file not found: " + filePath);
+			return;
+		}
+
+		string[] lines = System.IO.File.ReadAllLines(filePath);
+
+		int width = 0;
+		int height = 0;
+		Color[] ballColors = null;
+		List<string> mazeLines = new List<string>();
+
+		bool readingMaze = false;
+		foreach (string line in lines) {
+			if (line.StartsWith("WIDTH=")) {
+				width = int.Parse(line.Substring(6));
+			} else if (line.StartsWith("HEIGHT=")) {
+				height = int.Parse(line.Substring(7));
+			} else if (line.StartsWith("BALL_COLORS=")) {
+				string colorData = line.Substring(12);
+				string[] colorGroups = colorData.Split(';');
+				ballColors = new Color[colorGroups.Length];
+				for (int i = 0; i < colorGroups.Length; i++) {
+					string[] rgb = colorGroups[i].Split(',');
+					ballColors[i] = new Color(
+						float.Parse(rgb[0]),
+						float.Parse(rgb[1]),
+						float.Parse(rgb[2])
+					);
+				}
+			} else if (line.Trim().Length == 0 && !readingMaze) {
+				continue;
+			} else {
+				readingMaze = true;
+				mazeLines.Add(line);
+			}
+		}
+
+		if (ballColors == null) {
+			ballColors = new Color[] { new Color(1.0f, 0.4f, 0.4f) };
+		}
+
+		GenerateLevelFromText(width, height, ballColors, mazeLines.ToArray());
 	}
-	Quaternion GetRotationFromAxis()
-	{
-		switch (axis)
-		{
+
+	void GenerateLevelFromText(int width, int height, Color[] ballColors, string[] mazeLines) {
+		LevelConfig config = new LevelConfig {
+			width = width,
+			height = height,
+			axis = MazeAxis.ZPositive,
+			ball_count = ballColors.Length,
+			ball_colors = ballColors
+		};
+
+		m_Maze = new int[width, height];
+		m_PathPositions = new List<Vector3>();
+
+		List<Vector2Int> ballPositions = new List<Vector2Int>();
+		List<Vector2Int> holePositions = new List<Vector2Int>();
+		List<List<Vector2Int>> pressurePlates = new List<List<Vector2Int>>();
+		List<List<Vector2Int>> gates = new List<List<Vector2Int>>();
+
+		string gateSymbols = "!@$%^&*()";
+
+		for (int y = 0; y < mazeLines.Length && y < height; y++) {
+			string line = mazeLines[y];
+			for (int x = 0; x < line.Length && x < width; x++) {
+				char c = line[x];
+				int gridY = height - 1 - y;
+
+				if (c == '#') {
+					m_Maze[x, gridY] = 1;
+				} else if (c >= '1' && c <= '9') {
+					int ballIndex = c - '1';
+					while (ballPositions.Count <= ballIndex) {
+						ballPositions.Add(new Vector2Int(-1, -1));
+					}
+					ballPositions[ballIndex] = new Vector2Int(x, gridY);
+				} else if (c >= 'A' && c <= 'Z') {
+					int holeIndex = c - 'A';
+					while (holePositions.Count <= holeIndex) {
+						holePositions.Add(new Vector2Int(-1, -1));
+					}
+					holePositions[holeIndex] = new Vector2Int(x, gridY);
+				} else if (c >= 'a' && c <= 'z') {
+					int plateIndex = c - 'a';
+					while (pressurePlates.Count <= plateIndex) {
+						pressurePlates.Add(new List<Vector2Int>());
+					}
+					pressurePlates[plateIndex].Add(new Vector2Int(x, gridY));
+				} else if (gateSymbols.IndexOf(c) >= 0) {
+					int gateIndex = gateSymbols.IndexOf(c);
+					while (gates.Count <= gateIndex) {
+						gates.Add(new List<Vector2Int>());
+					}
+					gates[gateIndex].Add(new Vector2Int(x, gridY));
+				}
+			}
+		}
+
+		BuildMaze(config);
+		EnsureBallsExist(config);
+
+		for (int i = 0; i < pressurePlates.Count; i++) {
+			GameObject plateObj = null;
+			if (pressurePlates[i].Count > 0) {
+				Vector2Int platePos = pressurePlates[i][0];
+				CreatePressurePlate(config, platePos.x, platePos.y, out plateObj);
+			}
+
+			if (i < gates.Count && gates[i].Count > 0 && plateObj != null) {
+				foreach (Vector2Int gatePos in gates[i]) {
+					CreateSingleBarrier(config, gatePos.x, gatePos.y, gates[i], plateObj);
+				}
+			}
+		}
+
+		for (int i = 0; i < holePositions.Count; i++) {
+			if (holePositions[i].x >= 0) {
+				CreateWinningArea(config, holePositions[i].x, holePositions[i].y, i);
+			}
+		}
+
+		for (int i = 0; i < ballPositions.Count; i++) {
+			if (ballPositions[i].x >= 0) {
+				PositionBall(config, ballPositions[i].x, ballPositions[i].y, i);
+			}
+		}
+	}
+
+	void Start() {
+		LoadLevelFromFile(levelId);
+	}
+
+	void CreatePressurePlate(LevelConfig config, int grid_x, int grid_y, out GameObject plate) {
+		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
+		float offset_x = -0.5f * config.width * cell_size;
+		float offset_y = -0.5f * config.height * cell_size;
+		Quaternion rotation = GetRotationFromAxis(config.axis);
+
+		Vector3 local_pos = new Vector3(
+			offset_x + (grid_x + 0.5f) * cell_size,
+			offset_y + (grid_y + 0.5f) * cell_size,
+			0.45f
+		);
+		Vector3 plate_position = rotation * local_pos;
+
+		plate = new GameObject("PressurePlate");
+		plate.transform.position = plate_position;
+		plate.transform.rotation = rotation;
+		plate.transform.parent = transform;
+
+		float scaled_size = cell_size * 1.0f;
+		Color plate_color = new Color(1.0f, 1.0f, 0.3f);
+		Color plate_grayed = plate_color * 0.7f;
+
+		GameObject outer_square = GameObject.CreatePrimitive(PrimitiveType.Cube);
+		outer_square.name = "OuterSquare";
+		outer_square.transform.parent = plate.transform;
+		outer_square.transform.localPosition = Vector3.zero;
+		outer_square.transform.localEulerAngles = new Vector3(90, 0, 0);
+		outer_square.transform.localScale = new Vector3(scaled_size * 1.3f, scaled_size * 0.15f, scaled_size * 1.3f);
+		Material outer_mat = new Material(Shader.Find("Unlit/Color"));
+		outer_mat.color = plate_grayed;
+		outer_square.GetComponent<Renderer>().material = outer_mat;
+		Destroy(outer_square.GetComponent<BoxCollider>());
+
+		GameObject inner_square = GameObject.CreatePrimitive(PrimitiveType.Cube);
+		inner_square.name = "InnerSquare";
+		inner_square.transform.parent = plate.transform;
+		inner_square.transform.localPosition = new Vector3(0, 0, -0.0001f);
+		inner_square.transform.localEulerAngles = new Vector3(90, 0, 0);
+		inner_square.transform.localScale = new Vector3(scaled_size, scaled_size * 0.15f, scaled_size);
+		Material inner_mat = new Material(Shader.Find("Unlit/Color"));
+		inner_mat.color = plate_grayed * 0.65f;
+		inner_square.GetComponent<Renderer>().material = inner_mat;
+		Destroy(inner_square.GetComponent<BoxCollider>());
+
+		SphereCollider trigger = plate.AddComponent<SphereCollider>();
+		trigger.radius = scaled_size * 1.5f;
+		trigger.isTrigger = true;
+
+		plate.AddComponent<PressurePlate>();
+	}
+
+	void CreateBarrier(LevelConfig config, int grid_y, int axis, int start_x, int end_x, GameObject pressurePlate) {
+		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
+		float offset_x = -0.5f * config.width * cell_size;
+		float offset_y = -0.5f * config.height * cell_size;
+		Quaternion rotation = GetRotationFromAxis(config.axis);
+
+		for (int x = start_x; x <= end_x; x++) {
+			Vector3 local_pos = new Vector3(
+				offset_x + (x + 0.5f) * cell_size,
+				offset_y + (grid_y + 0.5f) * cell_size,
+				0.45f
+			);
+			Vector3 barrier_position = rotation * local_pos;
+
+			GameObject barrier = GameObject.CreatePrimitive(PrimitiveType.Cube);
+			barrier.name = "Barrier";
+			barrier.transform.position = barrier_position;
+			barrier.transform.rotation = rotation;
+			barrier.transform.localScale = new Vector3(cell_size * 0.3f, cell_size, cell_size * 3.0f);
+			barrier.transform.parent = transform;
+
+			Material barrier_mat = new Material(Shader.Find("Unlit/Color"));
+			barrier_mat.color = new Color(1.0f, 1.0f, 0.3f);
+			barrier.GetComponent<Renderer>().material = barrier_mat;
+
+			ControllableBarrier barrierScript = barrier.AddComponent<ControllableBarrier>();
+
+			if (pressurePlate != null) {
+				PressurePlate plateScript = pressurePlate.GetComponent<PressurePlate>();
+				if (plateScript != null) {
+					plateScript.onActivated.AddListener(barrierScript.Open);
+					plateScript.onDeactivated.AddListener(barrierScript.Close);
+				}
+			}
+		}
+	}
+
+	void CreateSingleBarrier(LevelConfig config, int grid_x, int grid_y, List<Vector2Int> allGatePositions, GameObject pressurePlate) {
+		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
+		float offset_x = -0.5f * config.width * cell_size;
+		float offset_y = -0.5f * config.height * cell_size;
+		Quaternion rotation = GetRotationFromAxis(config.axis);
+
+		Vector3 local_pos = new Vector3(
+			offset_x + (grid_x + 0.5f) * cell_size,
+			offset_y + (grid_y + 0.5f) * cell_size,
+			0.45f
+		);
+		Vector3 barrier_position = rotation * local_pos;
+
+		bool hasLeftWall = grid_x > 0 && m_Maze[grid_x - 1, grid_y] == 1;
+		bool hasRightWall = grid_x < config.width - 1 && m_Maze[grid_x + 1, grid_y] == 1;
+		bool hasTopWall = grid_y < config.height - 1 && m_Maze[grid_x, grid_y + 1] == 1;
+		bool hasBottomWall = grid_y > 0 && m_Maze[grid_x, grid_y - 1] == 1;
+
+		bool hasLeftGate = allGatePositions.Exists(pos => pos.x == grid_x - 1 && pos.y == grid_y);
+		bool hasRightGate = allGatePositions.Exists(pos => pos.x == grid_x + 1 && pos.y == grid_y);
+		bool hasTopGate = allGatePositions.Exists(pos => pos.x == grid_x && pos.y == grid_y + 1);
+		bool hasBottomGate = allGatePositions.Exists(pos => pos.x == grid_x && pos.y == grid_y - 1);
+
+		bool hasAnyWall = hasLeftWall || hasRightWall || hasTopWall || hasBottomWall;
+		bool hasAnyGate = hasLeftGate || hasRightGate || hasTopGate || hasBottomGate;
+
+		bool isHorizontal;
+		if (hasAnyWall) {
+			isHorizontal = (hasLeftWall || hasRightWall) && !hasTopWall && !hasBottomWall;
+		} else if (hasAnyGate) {
+			isHorizontal = (hasLeftGate || hasRightGate);
+		} else {
+			isHorizontal = false;
+		}
+
+		Vector3 barrierScale;
+		if (isHorizontal) {
+			barrierScale = new Vector3(cell_size, cell_size * 0.3f, cell_size * 3.0f);
+		} else {
+			barrierScale = new Vector3(cell_size * 0.3f, cell_size, cell_size * 3.0f);
+		}
+
+		GameObject barrier = GameObject.CreatePrimitive(PrimitiveType.Cube);
+		barrier.name = "Barrier";
+		barrier.transform.position = barrier_position;
+		barrier.transform.rotation = rotation;
+		barrier.transform.localScale = barrierScale;
+		barrier.transform.parent = transform;
+
+		Color gateBaseColor = new Color(1.0f, 1.0f, 0.3f);
+		Color mazeBgColor = new Color(0.392f, 0.208f, 0.0f);
+		Color finalGateColor = gateBaseColor * 0.5f + mazeBgColor * 0.5f;
+
+		Material barrier_mat = new Material(Shader.Find("Unlit/Color"));
+		barrier_mat.color = finalGateColor;
+		barrier.GetComponent<Renderer>().material = barrier_mat;
+
+		ControllableBarrier barrierScript = barrier.AddComponent<ControllableBarrier>();
+
+		if (pressurePlate != null) {
+			PressurePlate plateScript = pressurePlate.GetComponent<PressurePlate>();
+			if (plateScript != null) {
+				plateScript.onActivated.AddListener(barrierScript.Open);
+				plateScript.onDeactivated.AddListener(barrierScript.Close);
+			}
+		}
+	}
+
+	void EnsureBallsExist(LevelConfig config) {
+		GameObject[] existing_balls = GameObject.FindGameObjectsWithTag("Ball");
+
+		if (existing_balls.Length < config.ball_count) {
+			if (existing_balls.Length == 0) {
+				Debug.LogError("No balls found in scene. Add at least one ball with 'Ball' tag.");
+				return;
+			}
+
+			GameObject original_ball = existing_balls[0];
+			for (int i = existing_balls.Length; i < config.ball_count; i++) {
+				GameObject new_ball = Instantiate(original_ball);
+				new_ball.name = "Ball_" + i;
+				new_ball.tag = "Ball";
+			}
+		}
+	}
+
+	void BuildMaze(LevelConfig config) {
+		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
+		float offset_x = -0.5f * config.width * cell_size;
+		float offset_y = -0.5f * config.height * cell_size;
+		Quaternion rotation = GetRotationFromAxis(config.axis);
+
+		for (int i = 0; i < config.width; i++) {
+			for (int j = 0; j < config.height; j++) {
+				Vector3 local_pos = new Vector3(
+					offset_x + (i + 0.5f) * cell_size,
+					offset_y + (j + 0.5f) * cell_size,
+					0.45f
+				);
+				Vector3 rotated_pos = rotation * local_pos;
+
+				if (m_Maze[i, j] == 1) {
+					GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+					cube.transform.localScale = new Vector3(cell_size, cell_size, cell_size * 3.0f);
+					cube.transform.rotation = rotation;
+					cube.transform.position = rotated_pos;
+					if (brick != null) cube.GetComponent<Renderer>().material = brick;
+					cube.transform.parent = transform;
+				} else {
+					m_PathPositions.Add(rotated_pos);
+				}
+			}
+		}
+
+		ScaleMazeBackground(config.width, config.height, cell_size);
+	}
+
+	void CreateWinningArea(LevelConfig config, int grid_x, int grid_y, int color_index) {
+		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
+		float offset_x = -0.5f * config.width * cell_size;
+		float offset_y = -0.5f * config.height * cell_size;
+		Quaternion rotation = GetRotationFromAxis(config.axis);
+
+		Vector3 local_pos = new Vector3(
+			offset_x + (grid_x + 0.5f) * cell_size,
+			offset_y + (grid_y + 0.5f) * cell_size,
+			0.45f
+		);
+		m_WinningPosition = rotation * local_pos;
+
+		GameObject win_area = new GameObject("WinningArea_" + color_index);
+		win_area.tag = "WinningArea";
+		win_area.transform.position = m_WinningPosition;
+		win_area.transform.rotation = rotation;
+		win_area.transform.parent = transform;
+
+		float scaled_size = cell_size * 0.8f;
+		Color area_color = config.ball_colors[color_index];
+		Color grayed_color = area_color * 0.7f;
+
+		GameObject inner_ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+		inner_ring.name = "InnerRing";
+		inner_ring.transform.parent = win_area.transform;
+		inner_ring.transform.localPosition = new Vector3(0, 0, -0.0001f);
+		inner_ring.transform.localEulerAngles = GetCylinderRotation(config.axis);
+		float inner_diameter = scaled_size;
+		float inner_thickness = scaled_size * 0.18f;
+		inner_ring.transform.localScale = new Vector3(inner_diameter, inner_thickness, inner_diameter);
+		Material inner_material = new Material(Shader.Find("Unlit/Color"));
+		inner_material.color = grayed_color * 0.6f;
+		inner_ring.GetComponent<Renderer>().material = inner_material;
+		Destroy(inner_ring.GetComponent<CapsuleCollider>());
+
+		GameObject outer_ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+		outer_ring.name = "OuterRing";
+		outer_ring.transform.parent = win_area.transform;
+		outer_ring.transform.localPosition = Vector3.zero;
+		outer_ring.transform.localEulerAngles = GetCylinderRotation(config.axis);
+		float ring_diameter = scaled_size * 1.2f;
+		float ring_thickness = scaled_size * 0.18f;
+		outer_ring.transform.localScale = new Vector3(ring_diameter, ring_thickness, ring_diameter);
+		Material outer_material = new Material(Shader.Find("Unlit/Color"));
+		outer_material.color = grayed_color;
+		outer_ring.GetComponent<Renderer>().material = outer_material;
+		Destroy(outer_ring.GetComponent<CapsuleCollider>());
+
+		SphereCollider trigger_collider = win_area.AddComponent<SphereCollider>();
+		trigger_collider.radius = scaled_size * 0.8f;
+		trigger_collider.isTrigger = true;
+
+		WinningArea win_area_component = win_area.AddComponent<WinningArea>();
+		win_area_component.requiredColor = area_color;
+	}
+
+	void PositionBalls(LevelConfig config, int grid_x, int grid_y, int color_index) {
+		GameObject[] existing_balls = GameObject.FindGameObjectsWithTag("Ball");
+		if (existing_balls.Length == 0) return;
+
+		GameObject ball = existing_balls[0];
+		for (int i = 1; i < existing_balls.Length; i++) {
+			Destroy(existing_balls[i]);
+		}
+
+		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
+		float offset_x = -0.5f * config.width * cell_size;
+		float offset_y = -0.5f * config.height * cell_size;
+		Quaternion rotation = GetRotationFromAxis(config.axis);
+
+		Vector3 local_pos = new Vector3(
+			offset_x + (grid_x + 0.5f) * cell_size,
+			offset_y + (grid_y + 0.5f) * cell_size,
+			0.45f
+		);
+		Vector3 ball_position = rotation * local_pos;
+
+		ball.transform.position = ball_position;
+
+		Color ball_color = config.ball_colors[color_index];
+		Renderer ball_renderer = ball.GetComponent<Renderer>();
+		if (ball_renderer != null) ball_renderer.material.color = ball_color;
+
+		BallColor ball_color_component = ball.GetComponent<BallColor>();
+		if (ball_color_component == null) ball_color_component = ball.AddComponent<BallColor>();
+		ball_color_component.color = ball_color;
+	}
+
+	void PositionBall(LevelConfig config, int grid_x, int grid_y, int color_index) {
+		GameObject[] existing_balls = GameObject.FindGameObjectsWithTag("Ball");
+		if (existing_balls.Length <= color_index) return;
+
+		GameObject ball = existing_balls[color_index];
+
+		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
+		float offset_x = -0.5f * config.width * cell_size;
+		float offset_y = -0.5f * config.height * cell_size;
+		Quaternion rotation = GetRotationFromAxis(config.axis);
+
+		Vector3 local_pos = new Vector3(
+			offset_x + (grid_x + 0.5f) * cell_size,
+			offset_y + (grid_y + 0.5f) * cell_size,
+			0.45f
+		);
+		Vector3 ball_position = rotation * local_pos;
+
+		ball.transform.position = ball_position;
+
+		Color ball_color = config.ball_colors[color_index];
+		Renderer ball_renderer = ball.GetComponent<Renderer>();
+		if (ball_renderer != null) ball_renderer.material.color = ball_color;
+
+		BallColor ball_color_component = ball.GetComponent<BallColor>();
+		if (ball_color_component == null) ball_color_component = ball.AddComponent<BallColor>();
+		ball_color_component.color = ball_color;
+	}
+
+	void ScaleMazeBackground(int width, int height, float cell_size) {
+		GameObject maze_bg = GameObject.FindGameObjectWithTag("MazeBG");
+		if (maze_bg != null) {
+			float maze_width = width * cell_size;
+			float maze_height = height * cell_size;
+			maze_bg.transform.localScale = new Vector3(maze_width, maze_height, maze_bg.transform.localScale.z);
+			maze_bg.transform.localPosition = new Vector3(0, 0, 10);
+		}
+	}
+
+	Quaternion GetRotationFromAxis(MazeAxis axis) {
+		switch (axis) {
 			case MazeAxis.XPositive: return Quaternion.Euler(0, 90, 0);
 			case MazeAxis.XNegative: return Quaternion.Euler(0, -90, 0);
 			case MazeAxis.YPositive: return Quaternion.Euler(-90, 0, 0);
@@ -62,333 +506,36 @@ public class MazeGenerator : MonoBehaviour {
 			default: return Quaternion.identity;
 		}
 	}
-	void GenerateMaze()
-	{
-		Maze = new int[width, height];
-		for (int x = 0; x < width; x++)
-		{
-			for (int y = 0; y < height; y++)
-			{
-				Maze[x, y] = 1;
-			}
-		}
-		CreateMaze();
-		float cell_size = 1.0f / Mathf.Max(width, height);
-		float offset_x = -0.45f;
-		float offset_y = -0.45f;
-		Quaternion rotation = GetRotationFromAxis();
-		GameObject ptype = null;
-		for (int i = 0; i <= Maze.GetUpperBound(0); i++)
-		{
-			for (int j = 0; j <= Maze.GetUpperBound(1); j++)
-			{
-				Vector3 local_pos = new Vector3(offset_x + i * cell_size, offset_y + j * cell_size, 0.45f);
-				Vector3 rotated_pos = rotation * local_pos;
-				if (Maze[i, j] == 1)
-				{
-					ptype = GameObject.CreatePrimitive(PrimitiveType.Cube);
-					ptype.transform.localScale = new Vector3(cell_size, cell_size, cell_size * 3.0f);
-					ptype.transform.rotation = rotation;
-					ptype.transform.position = rotated_pos;
-					if (brick != null)
-					{
-						ptype.GetComponent<Renderer>().material = brick;
-					}
-					ptype.transform.parent = transform;
-				}
-				else if (Maze[i, j] == 0)
-				{
-					pathMazes.Add(rotated_pos);
-				}
-			}
-		}
-	}
-	void CreateMaze()
-	{
-		Vector2 start = Vector2.one;
-		_tiletoTry.Push(start);
-		Maze[(int)start.x, (int)start.y] = 0;
-		while (_tiletoTry.Count > 0)
-		{
-			Vector2 current = _tiletoTry.Peek();
-			List<Vector2> neighbors = GetValidNeighbors(current);
-			if (neighbors.Count > 0)
-			{
-				Vector2 chosen = neighbors[0];
-				Vector2 wall = new Vector2((current.x + chosen.x) / 2, (current.y + chosen.y) / 2);
-				Maze[(int)wall.x, (int)wall.y] = 0;
-				Maze[(int)chosen.x, (int)chosen.y] = 0;
-				_tiletoTry.Push(chosen);
-			}
-			else
-			{
-				_tiletoTry.Pop();
-			}
-		}
-	}
-	private List<Vector2> GetValidNeighbors(Vector2 centerTile)
-	{
-		List<Vector2> validNeighbors = new List<Vector2>();
-		foreach (var offset in offsets)
-		{
-			Vector2 toCheck = new Vector2(centerTile.x + offset.x, centerTile.y + offset.y);
-			if (IsInside(toCheck) && Maze[(int)toCheck.x, (int)toCheck.y] == 1)
-			{
-				validNeighbors.Add(toCheck);
-			}
-		}
-		Shuffle(validNeighbors);
-		return validNeighbors;
-	}
-	private void Shuffle(List<Vector2> list)
-	{
-		for (int i = list.Count - 1; i > 0; i--)
-		{
-			int j = rnd.Next(i + 1);
-			Vector2 temp = list[i];
-			list[i] = list[j];
-			list[j] = temp;
-		}
-	}
-	private bool IsInside(Vector2 p)
-	{
-		return p.x >= 0 && p.y >= 0 && p.x < width && p.y < height;
-	}
 
-	void CreateWinningAreas()
-	{
-		if (pathMazes.Count == 0) return;
-
-		float cell_size = 1.0f / Mathf.Max(width, height);
-		float offset_x = -0.45f;
-		float offset_y = -0.45f;
-		Quaternion rotation = GetRotationFromAxis();
-
-		Vector3[] targetPositions = new Vector3[5];
-		targetPositions[0] = rotation * new Vector3(0f, 0f, 0.45f);
-		targetPositions[1] = rotation * new Vector3(offset_x, offset_y + (height - 1) * cell_size, 0.45f);
-		targetPositions[2] = rotation * new Vector3(offset_x, offset_y, 0.45f);
-		targetPositions[3] = rotation * new Vector3(offset_x + (width - 1) * cell_size, offset_y + (height - 1) * cell_size, 0.45f);
-		targetPositions[4] = rotation * new Vector3(offset_x + (width - 1) * cell_size, offset_y, 0.45f);
-
-		// Create 2 winning areas for 2 balls
-		List<Vector3> usedWinningPositions = new List<Vector3>();
-		float minWinningAreaDistance = 0.15f;
-
-		for (int i = 0; i < 2; i++)
-		{
-			int chosenIndex = rnd.Next(5);
-			Vector3 targetPos = targetPositions[chosenIndex];
-
-			float minDist = float.MaxValue;
-			Vector3 winningPosition = pathMazes[0];
-
-			foreach (Vector3 pathPos in pathMazes)
-			{
-				// Check if too close to existing winning areas
-				bool tooClose = false;
-				foreach (Vector3 usedPos in usedWinningPositions)
-				{
-					if (Vector3.Distance(pathPos, usedPos) < minWinningAreaDistance)
-					{
-						tooClose = true;
-						break;
-					}
-				}
-
-				if (!tooClose)
-				{
-					float dist = Vector3.Distance(pathPos, targetPos);
-					if (dist < minDist)
-					{
-						minDist = dist;
-						winningPosition = pathPos;
-					}
-				}
-			}
-
-			usedWinningPositions.Add(winningPosition);
-
-			if (i == 0)
-			{
-				this.winningPosition = winningPosition;
-			}
-
-			GameObject winArea = new GameObject("WinningArea_" + i);
-			winArea.tag = "WinningArea";
-			winArea.transform.position = winningPosition + holesSpawnOffset;
-			winArea.transform.rotation = rotation;
-			winArea.transform.parent = transform;
-
-			float scaledSize = cell_size * 0.55f;
-			Color areaColor = ballColors[i];
-			Color grayedColor = areaColor * 0.7f;
-
-			GameObject innerSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-			innerSphere.name = "InnerSphere";
-			innerSphere.transform.parent = winArea.transform;
-			innerSphere.transform.localPosition = Vector3.zero;
-			innerSphere.transform.localScale = new Vector3(scaledSize, scaledSize, scaledSize);
-
-			Material innerMaterial = new Material(Shader.Find("Unlit/Color"));
-			innerMaterial.color = grayedColor * 0.6f;
-			innerSphere.GetComponent<Renderer>().material = innerMaterial;
-
-			Destroy(innerSphere.GetComponent<SphereCollider>());
-
-			GameObject outerRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-			outerRing.name = "OuterRing";
-			outerRing.transform.parent = winArea.transform;
-			outerRing.transform.localPosition = Vector3.zero;
-
-			Vector3 cylinderRotation = Vector3.zero;
-			switch (axis)
-			{
-				case MazeAxis.XPositive:
-				case MazeAxis.XNegative:
-					cylinderRotation = new Vector3(0, 0, 90);
-					break;
-				case MazeAxis.YPositive:
-				case MazeAxis.YNegative:
-					cylinderRotation = new Vector3(0, 0, 0);
-					break;
-				case MazeAxis.ZPositive:
-				case MazeAxis.ZNegative:
-					cylinderRotation = new Vector3(90, 0, 0);
-					break;
-			}
-			outerRing.transform.localEulerAngles = cylinderRotation;
-
-			float ringDiameter = scaledSize * 1.2f;
-			float ringThickness = scaledSize * 0.18f;
-			outerRing.transform.localScale = new Vector3(ringDiameter, ringThickness, ringDiameter);
-
-			Material outerMaterial = new Material(Shader.Find("Unlit/Color"));
-			outerMaterial.color = grayedColor;
-			outerRing.GetComponent<Renderer>().material = outerMaterial;
-
-			Destroy(outerRing.GetComponent<CapsuleCollider>());
-			SphereCollider triggerCollider = winArea.AddComponent<SphereCollider>();
-			triggerCollider.radius = scaledSize * 0.6f;
-			triggerCollider.isTrigger = true;
-
-			// Add WinningArea component and set its color
-			WinningArea winAreaComponent = winArea.AddComponent<WinningArea>();
-			winAreaComponent.requiredColor = areaColor;
+	Vector3 GetQuadRotation(MazeAxis axis) {
+		switch (axis) {
+			case MazeAxis.XPositive:
+			case MazeAxis.XNegative:
+				return new Vector3(0, 90, 0);
+			case MazeAxis.YPositive:
+			case MazeAxis.YNegative:
+				return new Vector3(90, 0, 0);
+			case MazeAxis.ZPositive:
+			case MazeAxis.ZNegative:
+				return Vector3.zero;
+			default:
+				return Vector3.zero;
 		}
 	}
 
-	Dictionary<Vector3, int> CalculatePathDistances()
-	{
-		Dictionary<Vector3, int> distances = new Dictionary<Vector3, int>();
-		Queue<Vector3> queue = new Queue<Vector3>();
-
-		queue.Enqueue(winningPosition);
-		distances[winningPosition] = 0;
-
-		float cell_size = 1.0f / Mathf.Max(width, height);
-		float maxNeighborDist = cell_size * 1.5f;
-
-		while (queue.Count > 0)
-		{
-			Vector3 current = queue.Dequeue();
-			int currentDist = distances[current];
-
-			foreach (Vector3 pathPos in pathMazes)
-			{
-				if (!distances.ContainsKey(pathPos))
-				{
-					float dist = Vector3.Distance(current, pathPos);
-					if (dist <= maxNeighborDist)
-					{
-						distances[pathPos] = currentDist + 1;
-						queue.Enqueue(pathPos);
-					}
-				}
-			}
-		}
-
-		return distances;
-	}
-
-	void PositionBalls()
-	{
-		GameObject[] existingBalls = GameObject.FindGameObjectsWithTag("Ball");
-		if (existingBalls.Length == 0 || pathMazes.Count < 2) return;
-
-		GameObject ball1 = existingBalls[0];
-
-		for (int i = existingBalls.Length - 1; i >= 1; i--)
-		{
-			Destroy(existingBalls[i]);
-		}
-
-		List<GameObject> balls = new List<GameObject>();
-		balls.Add(ball1);
-
-		for (int i = 1; i < totalBallsCount; i++)
-		{
-			GameObject newBall = Instantiate(ball1);
-			newBall.name = "Ball" + (i + 1);
-			balls.Add(newBall);
-		}
-
-		Dictionary<Vector3, int> pathDistances = CalculatePathDistances();
-
-		List<Vector3> sortedPositions = new List<Vector3>(pathMazes);
-		sortedPositions.Sort((a, b) => {
-			int distA = pathDistances.ContainsKey(a) ? pathDistances[a] : 0;
-			int distB = pathDistances.ContainsKey(b) ? pathDistances[b] : 0;
-			return distB.CompareTo(distA);
-		});
-
-		List<Vector3> usedPositions = new List<Vector3>();
-		float minBallDistance = 0.1f;
-
-		for (int i = 0; i < balls.Count; i++)
-		{
-			Vector3 chosenPos = Vector3.zero;
-			bool foundPosition = false;
-
-			foreach (Vector3 candidatePos in sortedPositions)
-			{
-				bool tooClose = false;
-				foreach (Vector3 usedPos in usedPositions)
-				{
-					if (Vector3.Distance(candidatePos, usedPos) < minBallDistance)
-					{
-						tooClose = true;
-						break;
-					}
-				}
-
-				if (!tooClose)
-				{
-					chosenPos = candidatePos;
-					foundPosition = true;
-					break;
-				}
-			}
-
-			if (foundPosition)
-			{
-				balls[i].transform.position = chosenPos + ballsSpawnOffset;
-				usedPositions.Add(chosenPos);
-
-				Color ballColor = ballColors[i % ballColors.Length];
-				Renderer ballRenderer = balls[i].GetComponent<Renderer>();
-				if (ballRenderer != null)
-				{
-					ballRenderer.material.color = ballColor;
-				}
-
-				BallColor ballColorComponent = balls[i].GetComponent<BallColor>();
-				if (ballColorComponent == null)
-				{
-					ballColorComponent = balls[i].AddComponent<BallColor>();
-				}
-				ballColorComponent.color = ballColor;
-			}
+	Vector3 GetCylinderRotation(MazeAxis axis) {
+		switch (axis) {
+			case MazeAxis.XPositive:
+			case MazeAxis.XNegative:
+				return new Vector3(0, 0, 90);
+			case MazeAxis.YPositive:
+			case MazeAxis.YNegative:
+				return Vector3.zero;
+			case MazeAxis.ZPositive:
+			case MazeAxis.ZNegative:
+				return new Vector3(90, 0, 0);
+			default:
+				return Vector3.zero;
 		}
 	}
 }

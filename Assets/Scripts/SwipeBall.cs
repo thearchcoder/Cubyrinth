@@ -16,11 +16,13 @@ public class SwipeBall : MonoBehaviour
 	[SerializeField] private float m_FrictionCoefficient = 0.5f;
 	[SerializeField] private bool m_UseKeyboardForTesting = true;
 	[SerializeField] private float m_KeyboardTiltSpeed = 2f;
+	[SerializeField] private float m_MaxVelocity = 5f;
 	private Rigidbody m_Rigidbody;
 	private Vector3 m_SimulatedAccel = Vector3.zero;
 	private bool m_IsEnteringHole = false;
 	private Vector3 m_TargetHolePosition;
-	private float m_HolePullStrength = 5f;
+	private float m_HoleEntryTime = 0f;
+	private float m_HoleEntryDuration = 0.25f;
 	void Start()
 	{
 		m_Rigidbody = GetComponent<Rigidbody>();
@@ -61,30 +63,24 @@ public class SwipeBall : MonoBehaviour
 	}
 	void FixedUpdate()
 	{
+		Vector3 friction = -m_Rigidbody.linearVelocity * m_FrictionCoefficient;
+
 		if (m_IsEnteringHole)
 		{
-			// Ball is entering hole - move towards hole center
-			Vector3 directionToHole = m_TargetHolePosition - transform.position;
-			float distanceToHole = directionToHole.magnitude;
+			// Track time entering hole
+			m_HoleEntryTime += Time.fixedDeltaTime;
 
-			// Apply force towards the hole
-			if (distanceToHole > 0.001f)
-			{
-				Vector3 pullForce = directionToHole.normalized * m_HolePullStrength;
-				m_Rigidbody.AddForce(pullForce, ForceMode.Acceleration);
-			}
+			// Calculate lerp speed that increases over time
+			float t = Mathf.Clamp01(m_HoleEntryTime / m_HoleEntryDuration);
+			float lerpSpeed = Mathf.Lerp(0.1f, 0.5f, t * t); // Start at 10%, end at 50% per frame, accelerate with t squared
 
-			// Apply friction to slow down
-			Vector3 friction = -m_Rigidbody.linearVelocity * m_FrictionCoefficient;
+			// Lerp position towards hole
+			transform.position = Vector3.Lerp(transform.position, m_TargetHolePosition, lerpSpeed);
+
+			// Apply friction to slow down velocity
 			m_Rigidbody.AddForce(friction, ForceMode.Acceleration);
 
 			ConstrainVelocity();
-
-			// When ball is very close and slow, destroy it
-			if (distanceToHole < 0.01f && m_Rigidbody.linearVelocity.magnitude < 0.1f)
-			{
-				Destroy(gameObject);
-			}
 
 			return;
 		}
@@ -106,7 +102,6 @@ public class SwipeBall : MonoBehaviour
 		Vector3 gravity = GetGravityDirection(accel) * m_GravityMultiplier;
 		m_Rigidbody.AddForce(gravity, ForceMode.Acceleration);
 
-		Vector3 friction = -m_Rigidbody.linearVelocity * m_FrictionCoefficient;
 		m_Rigidbody.AddForce(friction, ForceMode.Acceleration);
 
 		ConstrainVelocity();
@@ -151,6 +146,12 @@ public class SwipeBall : MonoBehaviour
 				velocity.z = 0f;
 				break;
 		}
+
+		if (velocity.magnitude > m_MaxVelocity)
+		{
+			velocity = velocity.normalized * m_MaxVelocity;
+		}
+
 		m_Rigidbody.linearVelocity = velocity;
 	}
 
@@ -158,5 +159,6 @@ public class SwipeBall : MonoBehaviour
 	{
 		m_IsEnteringHole = true;
 		m_TargetHolePosition = holePosition;
+		m_HoleEntryTime = 0f;
 	}
 }

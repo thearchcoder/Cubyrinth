@@ -25,7 +25,6 @@ public class WinningArea : MonoBehaviour
 			{
 				if (ColorsMatch(ballColor.color, requiredColor))
 				{
-					// Instead of destroying immediately, start the smooth entry animation
 					SwipeBall swipeBall = other.GetComponent<SwipeBall>();
 					if (swipeBall != null)
 					{
@@ -39,7 +38,21 @@ public class WinningArea : MonoBehaviour
 						Debug.Log("You won!");
 					}
 				}
+				else
+				{
+					Debug.Log("Game Over!");
+					DespawnAllBalls();
+				}
 			}
+		}
+	}
+
+	void DespawnAllBalls()
+	{
+		GameObject[] balls = GameObject.FindGameObjectsWithTag("Ball");
+		foreach (GameObject ball in balls)
+		{
+			Destroy(ball);
 		}
 	}
 
