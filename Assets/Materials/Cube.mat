@@ -64,7 +64,7 @@ Material:
     - _Bottom: -1
     - _BumpScale: 1
     - _Cutoff: 0.5
-    - _DarkenAmount: 0.3
+    - _DarkenAmount: 0.25
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _FadeHeight: 0.93
