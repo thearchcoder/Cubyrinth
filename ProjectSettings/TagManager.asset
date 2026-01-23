@@ -8,6 +8,7 @@ TagManager:
   - Ball
   - WinningArea
   - MazeBG
+  - LevelText
   layers:
   - Default
   - TransparentFX

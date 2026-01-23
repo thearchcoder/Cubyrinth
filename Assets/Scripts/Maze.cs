@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using TMPro;
 
 public enum MazeAxis { XPositive, XNegative, YPositive, YNegative, ZPositive, ZNegative }
 
@@ -27,6 +28,10 @@ public class MazeGenerator : MonoBehaviour {
 
 	void LoadLevelFromFile(int level) {
 		string filePath = Application.dataPath + "/Levels/" + level + ".txt";
+
+		GameObject levelIdLabel = GameObject.FindGameObjectWithTag("LevelText");
+		TextMeshProUGUI levelIdText = levelIdLabel.GetComponent<TextMeshProUGUI>();
+		levelIdText.text = "Level " + level.ToString();
 
 		if (!System.IO.File.Exists(filePath)) {
 			Debug.LogError("Level file not found: " + filePath);
@@ -135,12 +140,12 @@ public class MazeGenerator : MonoBehaviour {
 			GameObject plateObj = null;
 			if (pressurePlates[i].Count > 0) {
 				Vector2Int platePos = pressurePlates[i][0];
-				CreatePressurePlate(config, platePos.x, platePos.y, out plateObj);
+				CreatePressurePlate(config, platePos.x, platePos.y, i, out plateObj);
 			}
 
 			if (i < gates.Count && gates[i].Count > 0 && plateObj != null) {
 				foreach (Vector2Int gatePos in gates[i]) {
-					CreateSingleBarrier(config, gatePos.x, gatePos.y, gates[i], plateObj);
+					CreateSingleBarrier(config, gatePos.x, gatePos.y, gates[i], i, plateObj);
 				}
 			}
 		}
@@ -162,7 +167,25 @@ public class MazeGenerator : MonoBehaviour {
 		LoadLevelFromFile(levelId);
 	}
 
-	void CreatePressurePlate(LevelConfig config, int grid_x, int grid_y, out GameObject plate) {
+	Color GetColorForIndex(int index) {
+		Color[] colors = new Color[] {
+			new Color(1.0f, 1.0f, 0.3f),  // a: yellow
+			new Color(0.3f, 0.85f, 0.3f), // b: grass green
+			new Color(0.3f, 0.7f, 1.0f),  // c: cyan
+			new Color(0.9f, 0.3f, 1.0f),  // d: purple
+			new Color(1.0f, 0.5f, 0.2f),  // e: orange
+			new Color(1.0f, 0.3f, 0.5f),  // f: pink
+			new Color(0.3f, 1.0f, 0.8f),  // g: mint
+			new Color(0.8f, 0.8f, 0.3f),  // h: gold
+			new Color(0.5f, 0.3f, 1.0f)   // i: violet
+		};
+		if (index < colors.Length) {
+			return colors[index];
+		}
+		return new Color(1.0f, 1.0f, 1.0f); // white fallback
+	}
+
+	void CreatePressurePlate(LevelConfig config, int grid_x, int grid_y, int plateIndex, out GameObject plate) {
 		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
 		float offset_x = -0.5f * config.width * cell_size;
 		float offset_y = -0.5f * config.height * cell_size;
@@ -181,7 +204,7 @@ public class MazeGenerator : MonoBehaviour {
 		plate.transform.parent = transform;
 
 		float scaled_size = cell_size * 1.0f;
-		Color plate_color = new Color(1.0f, 1.0f, 0.3f);
+		Color plate_color = GetColorForIndex(plateIndex);
 		Color plate_grayed = plate_color * 0.7f;
 
 		GameObject outer_square = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -250,7 +273,7 @@ public class MazeGenerator : MonoBehaviour {
 		}
 	}
 
-	void CreateSingleBarrier(LevelConfig config, int grid_x, int grid_y, List<Vector2Int> allGatePositions, GameObject pressurePlate) {
+	void CreateSingleBarrier(LevelConfig config, int grid_x, int grid_y, List<Vector2Int> allGatePositions, int gateIndex, GameObject pressurePlate) {
 		float cell_size = 1.0f / Mathf.Max(config.width, config.height);
 		float offset_x = -0.5f * config.width * cell_size;
 		float offset_y = -0.5f * config.height * cell_size;
@@ -299,7 +322,7 @@ public class MazeGenerator : MonoBehaviour {
 		barrier.transform.localScale = barrierScale;
 		barrier.transform.parent = transform;
 
-		Color gateBaseColor = new Color(1.0f, 1.0f, 0.3f);
+		Color gateBaseColor = GetColorForIndex(gateIndex);
 		Color mazeBgColor = new Color(0.392f, 0.208f, 0.0f);
 		Color finalGateColor = gateBaseColor * 0.5f + mazeBgColor * 0.5f;
 
@@ -358,6 +381,20 @@ public class MazeGenerator : MonoBehaviour {
 					cube.transform.position = rotated_pos;
 					if (brick != null) cube.GetComponent<Renderer>().material = brick;
 					cube.transform.parent = transform;
+
+					float border_size = cell_size * 1.15f;
+					GameObject border_cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+					border_cube.name = "WallBorder";
+					border_cube.transform.localScale = new Vector3(border_size, border_size, cell_size * 3.0f);
+					border_cube.transform.rotation = rotation;
+					border_cube.transform.position = rotated_pos;
+					border_cube.transform.parent = transform;
+
+					Color mazeColor = new Color(0.494f, 0.263f, 0.0f);
+					Material border_mat = new Material(Shader.Find("Unlit/Color"));
+					border_mat.color = mazeColor * 0.8f;
+					border_cube.GetComponent<Renderer>().material = border_mat;
+					Destroy(border_cube.GetComponent<BoxCollider>());
 				} else {
 					m_PathPositions.Add(rotated_pos);
 				}
@@ -396,7 +433,7 @@ public class MazeGenerator : MonoBehaviour {
 		inner_ring.transform.localPosition = new Vector3(0, 0, -0.0001f);
 		inner_ring.transform.localEulerAngles = GetCylinderRotation(config.axis);
 		float inner_diameter = scaled_size;
-		float inner_thickness = scaled_size * 0.18f;
+		float inner_thickness = scaled_size * 0.25f;
 		inner_ring.transform.localScale = new Vector3(inner_diameter, inner_thickness, inner_diameter);
 		Material inner_material = new Material(Shader.Find("Unlit/Color"));
 		inner_material.color = grayed_color * 0.6f;
@@ -409,7 +446,7 @@ public class MazeGenerator : MonoBehaviour {
 		outer_ring.transform.localPosition = Vector3.zero;
 		outer_ring.transform.localEulerAngles = GetCylinderRotation(config.axis);
 		float ring_diameter = scaled_size * 1.2f;
-		float ring_thickness = scaled_size * 0.18f;
+		float ring_thickness = scaled_size * 0.25f;
 		outer_ring.transform.localScale = new Vector3(ring_diameter, ring_thickness, ring_diameter);
 		Material outer_material = new Material(Shader.Find("Unlit/Color"));
 		outer_material.color = grayed_color;
@@ -483,6 +520,37 @@ public class MazeGenerator : MonoBehaviour {
 		BallColor ball_color_component = ball.GetComponent<BallColor>();
 		if (ball_color_component == null) ball_color_component = ball.AddComponent<BallColor>();
 		ball_color_component.color = ball_color;
+
+		Transform existingRing = ball.transform.Find("BallRing");
+		if (existingRing != null)
+		{
+			Destroy(existingRing.gameObject);
+		}
+
+		Transform existingCore = ball.transform.Find("BallCore");
+		if (existingCore != null)
+		{
+			Destroy(existingCore.gameObject);
+		}
+
+		GameObject core = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+		core.name = "BallCore";
+		core.transform.parent = ball.transform;
+		core.transform.localPosition = new Vector3(0, 0, -0.05f);
+		core.transform.localRotation = Quaternion.identity;
+		core.transform.localScale = new Vector3(0.95f, 0.95f, 0.95f);
+
+		Material core_material = new Material(Shader.Find("Unlit/Color"));
+		core_material.color = ball_color;
+		core.GetComponent<Renderer>().material = core_material;
+		Destroy(core.GetComponent<SphereCollider>());
+
+		if (ball_renderer != null)
+		{
+			Material ring_material = new Material(Shader.Find("Unlit/Color"));
+			ring_material.color = ball_color * 0.85f;
+			ball_renderer.material = ring_material;
+		}
 	}
 
 	void ScaleMazeBackground(int width, int height, float cell_size) {

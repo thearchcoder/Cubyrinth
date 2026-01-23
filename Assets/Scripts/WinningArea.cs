@@ -21,27 +21,19 @@ public class WinningArea : MonoBehaviour
 		if (other.CompareTag("Ball"))
 		{
 			BallColor ballColor = other.GetComponent<BallColor>();
-			if (ballColor != null)
+			if (ballColor != null && ColorsMatch(ballColor.color, requiredColor))
 			{
-				if (ColorsMatch(ballColor.color, requiredColor))
+				SwipeBall swipeBall = other.GetComponent<SwipeBall>();
+				if (swipeBall != null)
 				{
-					SwipeBall swipeBall = other.GetComponent<SwipeBall>();
-					if (swipeBall != null)
-					{
-						swipeBall.StartEnteringHole(transform.position);
-					}
-
-					ballsRemaining--;
-
-					if (ballsRemaining <= 0)
-					{
-						Debug.Log("You won!");
-					}
+					swipeBall.StartEnteringHole(transform.position);
 				}
-				else
+
+				ballsRemaining--;
+
+				if (ballsRemaining <= 0)
 				{
-					Debug.Log("Game Over!");
-					DespawnAllBalls();
+					Debug.Log("You won!");
 				}
 			}
 		}

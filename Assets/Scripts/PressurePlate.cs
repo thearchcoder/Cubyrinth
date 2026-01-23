@@ -18,6 +18,9 @@ public class PressurePlate : MonoBehaviour
 	private Renderer innerRenderer;
 	private Color outerBaseColor;
 	private Color innerBaseColor;
+	private float transitionSpeed = 8.0f;
+	private Color outerTargetColor;
+	private Color innerTargetColor;
 
 	void Start()
 	{
@@ -40,6 +43,21 @@ public class PressurePlate : MonoBehaviour
 			{
 				innerBaseColor = innerRenderer.material.color;
 			}
+		}
+
+		outerTargetColor = outerBaseColor;
+		innerTargetColor = innerBaseColor;
+	}
+
+	void Update()
+	{
+		if (outerRenderer != null)
+		{
+			outerRenderer.material.color = Color.Lerp(outerRenderer.material.color, outerTargetColor, Time.deltaTime * transitionSpeed);
+		}
+		if (innerRenderer != null)
+		{
+			innerRenderer.material.color = Color.Lerp(innerRenderer.material.color, innerTargetColor, Time.deltaTime * transitionSpeed);
 		}
 	}
 
@@ -71,14 +89,8 @@ public class PressurePlate : MonoBehaviour
 	void Activate()
 	{
 		isActivated = true;
-		if (outerRenderer != null)
-		{
-			outerRenderer.material.color = outerBaseColor * 1.5f;
-		}
-		if (innerRenderer != null)
-		{
-			innerRenderer.material.color = innerBaseColor * 1.5f;
-		}
+		outerTargetColor = outerBaseColor * 1.5f;
+		innerTargetColor = innerBaseColor * 1.5f;
 		onActivated.Invoke();
 		Debug.Log("Pressure plate activated!");
 	}
@@ -86,14 +98,8 @@ public class PressurePlate : MonoBehaviour
 	void Deactivate()
 	{
 		isActivated = false;
-		if (outerRenderer != null)
-		{
-			outerRenderer.material.color = outerBaseColor;
-		}
-		if (innerRenderer != null)
-		{
-			innerRenderer.material.color = innerBaseColor;
-		}
+		outerTargetColor = outerBaseColor;
+		innerTargetColor = innerBaseColor;
 		onDeactivated.Invoke();
 		Debug.Log("Pressure plate deactivated!");
 	}

@@ -32,6 +32,7 @@ public class SwipeBall : MonoBehaviour
 		}
 		m_Rigidbody.useGravity = false;
 		m_Rigidbody.isKinematic = false;
+		m_Rigidbody.freezeRotation = true;
 
 		GameObject maze_walls = GameObject.FindGameObjectWithTag("MazeOutsideWalls");
 		if (maze_walls != null)
@@ -63,22 +64,16 @@ public class SwipeBall : MonoBehaviour
 	}
 	void FixedUpdate()
 	{
-		Vector3 friction = -m_Rigidbody.linearVelocity * m_FrictionCoefficient;
-
 		if (m_IsEnteringHole)
 		{
-			// Track time entering hole
 			m_HoleEntryTime += Time.fixedDeltaTime;
 
-			// Calculate lerp speed that increases over time
 			float t = Mathf.Clamp01(m_HoleEntryTime / m_HoleEntryDuration);
-			float lerpSpeed = Mathf.Lerp(0.1f, 0.5f, t * t); // Start at 10%, end at 50% per frame, accelerate with t squared
+			float lerpSpeed = Mathf.Lerp(0.1f, 0.5f, t * t);
 
-			// Lerp position towards hole
 			transform.position = Vector3.Lerp(transform.position, m_TargetHolePosition, lerpSpeed);
 
-			// Apply friction to slow down velocity
-			m_Rigidbody.AddForce(friction, ForceMode.Acceleration);
+			m_Rigidbody.linearVelocity *= 1.0f - (1.2f * Time.fixedDeltaTime);
 
 			ConstrainVelocity();
 
@@ -101,8 +96,6 @@ public class SwipeBall : MonoBehaviour
 
 		Vector3 gravity = GetGravityDirection(accel) * m_GravityMultiplier;
 		m_Rigidbody.AddForce(gravity, ForceMode.Acceleration);
-
-		m_Rigidbody.AddForce(friction, ForceMode.Acceleration);
 
 		ConstrainVelocity();
 	}
@@ -160,5 +153,19 @@ public class SwipeBall : MonoBehaviour
 		m_IsEnteringHole = true;
 		m_TargetHolePosition = holePosition;
 		m_HoleEntryTime = 0f;
+
+		GameObject[] otherBalls = GameObject.FindGameObjectsWithTag("Ball");
+		foreach (GameObject ball in otherBalls)
+		{
+			if (ball != gameObject)
+			{
+				Collider ballCollider = ball.GetComponent<Collider>();
+				Collider thisCollider = GetComponent<Collider>();
+				if (ballCollider != null && thisCollider != null)
+				{
+					Physics.IgnoreCollision(thisCollider, ballCollider, true);
+				}
+			}
+		}
 	}
 }

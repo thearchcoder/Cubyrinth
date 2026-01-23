@@ -7,7 +7,7 @@ public class ControllableBarrier : MonoBehaviour
 	private Renderer barrierRenderer;
 	private Color closedColor;
 	private Color openColor;
-	private float transitionSpeed = 5.0f;
+	private float transitionSpeed = 8.0f;
 	private float currentAlpha = 1.0f;
 	private float targetAlpha = 1.0f;
 
