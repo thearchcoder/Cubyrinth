@@ -34,6 +34,19 @@ public class SwipeBall : MonoBehaviour
 		m_Rigidbody.isKinematic = false;
 		m_Rigidbody.freezeRotation = true;
 
+		PhysicsMaterial physicsMaterial = new PhysicsMaterial();
+		physicsMaterial.dynamicFriction = 0f;
+		physicsMaterial.staticFriction = 0f;
+		physicsMaterial.bounciness = 0f;
+		physicsMaterial.frictionCombine = PhysicsMaterialCombine.Minimum;
+		physicsMaterial.bounceCombine = PhysicsMaterialCombine.Minimum;
+
+		Collider ballCollider = GetComponent<Collider>();
+		if (ballCollider != null)
+		{
+			ballCollider.material = physicsMaterial;
+		}
+
 		GameObject maze_walls = GameObject.FindGameObjectWithTag("MazeOutsideWalls");
 		if (maze_walls != null)
 		{
@@ -153,6 +166,8 @@ public class SwipeBall : MonoBehaviour
 		m_IsEnteringHole = true;
 		m_TargetHolePosition = holePosition;
 		m_HoleEntryTime = 0f;
+
+		m_Rigidbody.linearVelocity *= 0.3f;
 
 		GameObject[] otherBalls = GameObject.FindGameObjectsWithTag("Ball");
 		foreach (GameObject ball in otherBalls)
