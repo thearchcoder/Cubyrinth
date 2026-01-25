@@ -1,10 +1,12 @@
 using UnityEngine;
+using System.Collections;
 
 public class WinningArea : MonoBehaviour
 {
 	public Color requiredColor;
 	private static int totalBalls = -1;
 	private static int ballsRemaining = 0;
+	private static bool levelCompleted = false;
 
 	void Start()
 	{
@@ -13,6 +15,7 @@ public class WinningArea : MonoBehaviour
 			GameObject[] balls = GameObject.FindGameObjectsWithTag("Ball");
 			totalBalls = balls.Length;
 			ballsRemaining = totalBalls;
+			levelCompleted = false;
 		}
 	}
 
@@ -31,9 +34,10 @@ public class WinningArea : MonoBehaviour
 
 				ballsRemaining--;
 
-				if (ballsRemaining <= 0)
+				if (ballsRemaining <= 0 && !levelCompleted)
 				{
-					Debug.Log("You won!");
+					levelCompleted = true;
+					StartCoroutine(OnLevelComplete());
 				}
 			}
 		}
@@ -57,9 +61,22 @@ public class WinningArea : MonoBehaviour
 		       Mathf.Abs(a.b - b.b) < tolerance;
 	}
 
+	IEnumerator OnLevelComplete()
+	{
+		Debug.Log("Level completed!");
+
+		yield return new WaitForSeconds(1.5f);
+
+		if (GameStateManager.instance != null)
+		{
+			GameStateManager.instance.NextLevel();
+		}
+	}
+
 	public static void ResetBallCount()
 	{
 		totalBalls = -1;
 		ballsRemaining = 0;
+		levelCompleted = false;
 	}
 }

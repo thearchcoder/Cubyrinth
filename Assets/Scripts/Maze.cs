@@ -164,7 +164,41 @@ public class MazeGenerator : MonoBehaviour {
 	}
 
 	void Start() {
+		if (GameStateManager.instance != null)
+		{
+			levelId = GameStateManager.instance.currentLevel;
+		}
 		LoadLevelFromFile(levelId);
+	}
+
+	public void ReloadLevel(int level)
+	{
+		WinningArea.ResetBallCount();
+
+		foreach (Transform child in transform)
+		{
+			Destroy(child.gameObject);
+		}
+
+		GameObject[] existingBalls = GameObject.FindGameObjectsWithTag("Ball");
+		foreach (GameObject ball in existingBalls)
+		{
+			SwipeBall swipeBall = ball.GetComponent<SwipeBall>();
+			if (swipeBall != null)
+			{
+				swipeBall.ResetBall();
+			}
+
+			Rigidbody rb = ball.GetComponent<Rigidbody>();
+			if (rb != null)
+			{
+				rb.linearVelocity = Vector3.zero;
+				rb.angularVelocity = Vector3.zero;
+			}
+		}
+
+		levelId = level;
+		LoadLevelFromFile(level);
 	}
 
 	Color GetColorForIndex(int index) {
@@ -344,7 +378,12 @@ public class MazeGenerator : MonoBehaviour {
 	void EnsureBallsExist(LevelConfig config) {
 		GameObject[] existing_balls = GameObject.FindGameObjectsWithTag("Ball");
 
-		if (existing_balls.Length < config.ball_count) {
+		if (existing_balls.Length > config.ball_count) {
+			for (int i = config.ball_count; i < existing_balls.Length; i++) {
+				Destroy(existing_balls[i]);
+			}
+		}
+		else if (existing_balls.Length < config.ball_count) {
 			if (existing_balls.Length == 0) {
 				Debug.LogError("No balls found in scene. Add at least one ball with 'Ball' tag.");
 				return;

@@ -952,6 +952,60 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 323125854}
   m_CullTransparentMesh: 1
+--- !u!1 &374299987
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 374299988}
+  - component: {fileID: 374299989}
+  m_Layer: 0
+  m_Name: UIManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &374299988
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 374299987}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -637.92957, y: -1389.0769, z: 10.88939}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1255302046}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &374299989
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 374299987}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1f019dadb4815823d8fa147fb19e5be5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIManager
+  panel: {fileID: 184902709}
+  panelContent: {fileID: 557181923}
+  settingsButton: {fileID: 1510193723}
+  closeButton: {fileID: 193100730}
+  vibrationButton: {fileID: 500131917}
+  sfxSlider: {fileID: 1307411911}
+  musicSlider: {fileID: 1784978220}
+  vibrationIcon: {fileID: 0}
+  vibrateOnSprite: {fileID: 0}
+  vibrateOffSprite: {fileID: 0}
 --- !u!1 &405694558
 GameObject:
   m_ObjectHideFlags: 0
@@ -2129,6 +2183,7 @@ RectTransform:
   - {fileID: 456851313}
   - {fileID: 1510193722}
   - {fileID: 184902710}
+  - {fileID: 374299988}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}

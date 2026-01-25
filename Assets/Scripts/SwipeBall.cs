@@ -77,6 +77,12 @@ public class SwipeBall : MonoBehaviour
 	}
 	void FixedUpdate()
 	{
+		if (GameStateManager.instance != null && !GameStateManager.instance.isPlaying)
+		{
+			m_Rigidbody.linearVelocity = Vector3.zero;
+			return;
+		}
+
 		if (m_IsEnteringHole)
 		{
 			m_HoleEntryTime += Time.fixedDeltaTime;
@@ -181,6 +187,38 @@ public class SwipeBall : MonoBehaviour
 					Physics.IgnoreCollision(thisCollider, ballCollider, true);
 				}
 			}
+		}
+	}
+
+	public void ResetBall()
+	{
+		m_IsEnteringHole = false;
+		m_HoleEntryTime = 0f;
+		ResetPhysics();
+
+		GameObject[] otherBalls = GameObject.FindGameObjectsWithTag("Ball");
+		Collider thisCollider = GetComponent<Collider>();
+		foreach (GameObject ball in otherBalls)
+		{
+			if (ball != gameObject && thisCollider != null)
+			{
+				Collider ballCollider = ball.GetComponent<Collider>();
+				if (ballCollider != null)
+				{
+					Physics.IgnoreCollision(thisCollider, ballCollider, false);
+				}
+			}
+		}
+	}
+
+	public void ResetPhysics()
+	{
+		m_SimulatedAccel = Vector3.zero;
+
+		if (m_Rigidbody != null)
+		{
+			m_Rigidbody.linearVelocity = Vector3.zero;
+			m_Rigidbody.angularVelocity = Vector3.zero;
 		}
 	}
 }
